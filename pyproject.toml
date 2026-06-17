@@ -1,0 +1,26 @@
+[project]
+name = "leadsgen"
+version = "0.1.0"
+description = "Dutch B2B domain lead enrichment API for Aresis"
+requires-python = ">=3.11"
+dependencies = [
+    "beautifulsoup4>=4.12.0",
+    "dnspython>=2.6.0",
+    "fastapi>=0.115.0",
+    "httpx>=0.27.0",
+    "lxml>=5.0.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.2.0",
+    "python-dotenv>=1.0.0",
+    "uvicorn[standard]>=0.30.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+    "respx>=0.21.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
