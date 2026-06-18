@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Dutch B2B domain lead enrichment API for Aresis"
 requires-python = ">=3.11"
 dependencies = [
+    "anthropic>=0.40.0",
     "beautifulsoup4>=4.12.0",
     "dnspython>=2.6.0",
     "fastapi>=0.115.0",

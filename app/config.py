@@ -23,6 +23,11 @@ class Settings(BaseSettings):
         default="/data/leadsgen.db", alias="SNAPSHOT_DATABASE_PATH"
     )
     snapshot_output_dir: str = Field(default="/data/exports", alias="SNAPSHOT_OUTPUT_DIR")
+    discord_webhook_url: str | None = Field(default=None, alias="DISCORD_WEBHOOK_URL")
+    anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
+    llm_model: str = Field(default="claude-haiku-4-5", alias="LLM_MODEL")
+    min_score_for_llm: int = Field(default=40, alias="MIN_SCORE_FOR_LLM")
+    max_domains_per_run: int = Field(default=200, alias="MAX_DOMAINS_PER_RUN")
 
 
 @lru_cache
