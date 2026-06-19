@@ -170,7 +170,7 @@ async def main() -> None:
         pairs = [
             (r, llm_scores.get(r.domain))
             for r in enriched
-            if (llm_scores.get(r.domain) or r.lead).fit_score >= 40
+            if (llm_scores.get(r.domain) or r.lead).fit_score >= 60
         ]
         await notifier.send_leads(pairs)
         await asyncio.sleep(0.5)

@@ -4,22 +4,25 @@ from app.models import DomainStatus, KvkProfile, LeadProfile, WebsiteProfile
 
 RELEVANT_TERMS = {
     "installatie",
+    "monteur",
+    "montage",
     "onderhoud",
     "reparatie",
+    "herstel",
+    "storing",
     "schoonmaak",
+    "reiniging",
     "field service",
-    "contractor",
     "aannemer",
-    "advies",
-    "consultancy",
-    "verhuur",
     "inspectie",
     "keuring",
     "certificering",
-    "planning",
-    "service",
-    "monteurs",
+    "loodgieter",
+    "elektricien",
+    "dakdekker",
+    "glazenwasser",
     "op locatie",
+    "buitendienst",
 }
 
 IRRELEVANT_TERMS = {
@@ -35,6 +38,14 @@ IRRELEVANT_TERMS = {
     "onderwijs",
     "gemeente",
     "stichting",
+    "makelaardij",
+    "hypotheek",
+    "verzekeraar",
+    "uitzendbureau",
+    "groothandel",
+    "detailhandel",
+    "horeca",
+    "vastgoed",
 }
 
 SOFTWARE_PROVIDER_TERMS = {
@@ -88,29 +99,47 @@ class ClassificationAgent:
         return "landing_page"
 
     def detect_sector(self, website: WebsiteProfile, kvk: KvkProfile) -> str | None:
-        text = " ".join(
-            [
-                website.title or "",
-                website.meta_description or "",
-                website.summary or "",
-                " ".join(website.detected_services),
-                " ".join(kvk.sbi_activiteiten),
-            ]
-        ).lower()
-        if any(term in text for term in SOFTWARE_PROVIDER_TERMS):
+        # Software check runs against all sources — these signals are unambiguous anywhere
+        combined = " ".join([
+            website.title or "",
+            website.meta_description or "",
+            website.summary or "",
+            " ".join(website.detected_services),
+            " ".join(kvk.sbi_activiteiten),
+        ]).lower()
+        if any(term in combined for term in SOFTWARE_PROVIDER_TERMS):
             return "software_provider"
-        if any(term in text for term in ["installatie", "monteur", "montage"]):
+
+        # KvK SBI descriptions are authoritative and specific — use them when available.
+        # If KvK has data but no field service terms match, don't fall through to website
+        # text to avoid false positives from generic "service" or "onderhoud" usage.
+        kvk_text = " ".join(kvk.sbi_activiteiten).lower()
+        text = kvk_text if kvk_text else " ".join([
+            website.title or "",
+            website.meta_description or "",
+            website.summary or "",
+            " ".join(website.detected_services),
+        ]).lower()
+
+        if any(term in text for term in [
+            "installatie", "monteur", "montage", "elektrotechnisch",
+            "loodgieter", "sanitair", "verwarming", "koeling", "klimaat",
+            "dakbedekking", "schilder", "stucwerk", "timmerwerk",
+            "rioolreiniging", "aannemer", "bouwinstallatie",
+        ]):
             return "installation"
-        if "schoonmaak" in text:
+        if any(term in text for term in [
+            "schoonmaak", "reiniging", "glazenwasser", "ongedierte",
+        ]):
             return "cleaning"
-        if any(term in text for term in ["inspectie", "keuring", "certificering"]):
+        if any(term in text for term in [
+            "inspectie", "keuring", "certificering", "keuringsdienst",
+        ]):
             return "inspection_certification"
-        if any(term in text for term in ["onderhoud", "reparatie", "service"]):
+        if any(term in text for term in [
+            "onderhoud", "reparatie", "herstel", "storingsonderhoud",
+        ]):
             return "maintenance_service"
-        if any(term in text for term in ["advies", "consultancy", "consultant"]):
-            return "b2b_consulting"
-        if any(term in text for term in ["verhuur", "rental"]):
-            return "rental_service"
         return None
 
     def relevance_signals(
