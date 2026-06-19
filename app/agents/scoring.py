@@ -17,8 +17,11 @@ class ScoringAgent:
         score = 0
         if domain_status == "active_business_website":
             score += 25
-        if sector:
+        if sector and sector != "software_provider":
             score += 20
+        if sector == "software_provider":
+            score -= 50
+            why_not_relevant.append("Company sells software or SaaS — not a field-service operator")
         if website.detected_pain_points:
             score += 15
         if website.public_business_emails or website.public_phone_numbers or website.contact_page_url:

@@ -37,6 +37,21 @@ IRRELEVANT_TERMS = {
     "stichting",
 }
 
+SOFTWARE_PROVIDER_TERMS = {
+    "software",
+    "saas",
+    "gratis demo",
+    "demo aanvragen",
+    "probeer gratis",
+    "free trial",
+    "integraties",
+    "planningssoftware",
+    "field service software",
+    "field service management",
+    "werkorder software",
+    "workforce management",
+}
+
 
 class ClassificationAgent:
     def classify_domain_status(self, has_dns: bool, website: WebsiteResult) -> DomainStatus:
@@ -82,6 +97,8 @@ class ClassificationAgent:
                 " ".join(kvk.sbi_activiteiten),
             ]
         ).lower()
+        if any(term in text for term in SOFTWARE_PROVIDER_TERMS):
+            return "software_provider"
         if any(term in text for term in ["installatie", "monteur", "montage"]):
             return "installation"
         if "schoonmaak" in text:
@@ -118,6 +135,9 @@ class ClassificationAgent:
             relevant.append("Operational pain-point terms detected: " + ", ".join(website.detected_pain_points[:8]))
         if website.public_business_emails or website.contact_page_url or website.public_phone_numbers:
             relevant.append("Public business contact path is available")
+        matched_software = sorted(term for term in SOFTWARE_PROVIDER_TERMS if term in text)
+        if matched_software:
+            not_relevant.append("Software/SaaS provider signals detected: " + ", ".join(matched_software[:5]))
         matched_irrelevant = sorted(term for term in IRRELEVANT_TERMS if term in text)
         if matched_irrelevant:
             not_relevant.append("Less relevant terms detected: " + ", ".join(matched_irrelevant[:8]))
