@@ -103,7 +103,7 @@ async def main() -> None:
         check_file.unlink()
 
     print(f"[2/5] Diffing against SQLite snapshot store ...")
-    result = SnapshotStore(Path(args.database)).save_snapshot_and_diff(run_id, domains)
+    result = SnapshotStore(Path(args.database)).save_snapshot_and_diff(today, domains)
     output_path = Path(args.output_dir) / f"domains_registered_{run_id}.txt"
     write_registered_domains_txt(
         result.added_domains,
