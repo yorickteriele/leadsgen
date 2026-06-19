@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-"""Download the daily .nl snapshot, enrich new domains, and post results to Discord."""
+"""Download today's new .nl registrations, enrich new domains, and post results to Discord."""
 from __future__ import annotations
 
 import argparse
 import asyncio
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -13,7 +13,7 @@ from app.agents.llm_scorer import LlmScoringAgent, LlmLeadScore
 from app.config import get_settings
 from app.discord_notifier import DiscordNotifier
 from app.domain_feed import write_registered_domains_txt
-from app.domains_monitor import DomainsMonitorError, download_full_nl_snapshot
+from app.domains_monitor import DomainsMonitorError, download_nl_daily_domains
 from app.models import EnrichDomainRequest, LeadEnrichmentResponse
 from app.pipeline import LeadEnrichmentPipeline
 from app.snapshot_store import SnapshotStore
@@ -81,19 +81,19 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
-    # Unique key per run so repeated/manual runs always diff vs the previous actual run.
     run_id = datetime.now(timezone.utc).isoformat()
-    display_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = date.today().isoformat()
 
     if not settings.domains_monitor_api_token:
         raise SystemExit("Set DOMAINS_MONITOR_API_TOKEN first.")
 
-    print(f"[1/5] Downloading full .nl snapshot (run {run_id}) ...")
+    print(f"[1/5] Downloading today's .nl daily delta (run {run_id}) ...")
     try:
-        domains = download_full_nl_snapshot(
+        domains = download_nl_daily_domains(
             settings.domains_monitor_api_token,
-            run_id,
+            today,
             Path(args.output_dir) / ".last-download-check.txt",
+            allow_current_fallback=True,
         )
     except DomainsMonitorError as exc:
         raise SystemExit(str(exc)) from None
@@ -104,16 +104,16 @@ async def main() -> None:
 
     print(f"[2/5] Diffing against SQLite snapshot store ...")
     result = SnapshotStore(Path(args.database)).save_snapshot_and_diff(run_id, domains)
-    output_path = Path(args.output_dir) / f"domains_registered_{display_date}.txt"
+    output_path = Path(args.output_dir) / f"domains_registered_{run_id}.txt"
     write_registered_domains_txt(
         result.added_domains,
         output_path,
-        display_date,
-        "domains-monitor.com-full-nl-snapshot-diff-sqlite",
+        run_id,
+        "domains-monitor.com-daily-delta-diff-sqlite",
     )
 
     total_new = len(result.added_domains)
-    print(f"    Stored {result.total_domains} total .nl domains. {total_new} new vs {result.previous_snapshot_date or 'no baseline'}.")
+    print(f"    Got {result.total_domains} domains in today's delta. {total_new} new vs {result.previous_snapshot_date or 'no baseline'}.")
 
     if result.previous_snapshot_date is None:
         print("    No previous snapshot; this run established the baseline. Nothing to notify.")
@@ -123,7 +123,7 @@ async def main() -> None:
         print("    No new domains detected today.")
         if settings.discord_webhook_url:
             notifier = DiscordNotifier(settings.discord_webhook_url)
-            await notifier.send_summary(display_date, 0, 0, False)
+            await notifier.send_summary(today, 0, 0, False)
         return
 
     to_enrich = result.added_domains[: args.max_domains]
@@ -154,7 +154,7 @@ async def main() -> None:
         print(f"[5/5] Sending results to Discord ...")
         notifier = DiscordNotifier(settings.discord_webhook_url)
 
-        await notifier.send_summary(display_date, total_new, len(enriched), llm_enabled)
+        await notifier.send_summary(today, total_new, len(enriched), llm_enabled)
         await asyncio.sleep(0.5)
 
         pairs = [(r, llm_scores.get(r.domain)) for r in enriched]
