@@ -15,41 +15,50 @@ class ScoringAgent:
         why_not_relevant: list[str],
     ) -> LeadProfile:
         score = 0
-        if domain_status == "active_business_website":
-            score += 25
+
+        # KvK is the primary signal — confirms the business exists and what it does
+        if kvk.kvk_match_status == "matched" and kvk.match_confidence >= 70:
+            score += 30
+        elif kvk.kvk_match_status == "matched":
+            score += 15
+        else:
+            score -= 20
+            why_not_relevant.append("No KvK match — cannot verify business type or sector")
+
+        # Sector relevance — sector detection already uses KvK SBI codes
         if sector and sector != "software_provider":
             score += 20
-        if sector == "software_provider":
+        elif sector == "software_provider":
             score -= 50
             why_not_relevant.append("Company sells software or SaaS — not a field-service operator")
-        if website.detected_pain_points:
-            score += 15
-        if website.public_business_emails or website.public_phone_numbers or website.contact_page_url:
-            score += 10
-        if kvk.match_confidence >= 70:
-            score += 10
+        else:
+            score -= 25
+            why_not_relevant.append("No field service sector identified from KvK SBI codes")
+
+        # Operational signals — bonuses, not requirements
         if has_mx:
             score += 10
         if self._appears_new(kvk):
             score += 10
+        if domain_status == "active_business_website":
+            score += 10
+        if website.detected_pain_points:
+            score += 10
+        if website.public_business_emails or website.public_phone_numbers or website.contact_page_url:
+            score += 10
 
+        # Disqualifying signals
+        if domain_status in {"personal_site", "webshop"}:
+            score -= 25
         if domain_status == "parked":
-            score -= 40
-        if domain_status == "no_website":
-            score -= 30
-        if domain_status == "personal_site":
-            score -= 25
-        if domain_status == "webshop":
-            score -= 25
-        if not sector and domain_status == "active_business_website":
-            score -= 20
+            score -= 5
         if kvk.kvk_match_status == "ambiguous":
-            score -= 15
+            score -= 10
         if kvk.aantal_vestigingen is not None and kvk.aantal_vestigingen > 10:
             score -= 15
             why_not_relevant.append("Company appears larger than the practical SMB target")
         if not (website.public_business_emails or website.public_phone_numbers or website.contact_page_url):
-            score -= 10
+            score -= 5
         if kvk.ind_non_mailing is True:
             score -= 10
 
@@ -59,9 +68,7 @@ class ScoringAgent:
             recommended_contact_method = "do_not_contact"
 
         return LeadProfile(
-            likely_business=score >= 40
-            and domain_status
-            in {"active_business_website", "landing_page", "under_construction"},
+            likely_business=score >= 40 and kvk.kvk_match_status in {"matched", "ambiguous"},
             sector=sector,
             company_size_estimate=self._size(kvk),
             fit_score=score,
@@ -94,7 +101,11 @@ class ScoringAgent:
     def _contact_method(
         self, domain_status: DomainStatus, website: WebsiteProfile, kvk: KvkProfile
     ) -> ContactMethod:
-        if domain_status in {"parked", "no_website", "personal_site", "webshop", "unknown"}:
+        if domain_status in {"personal_site", "webshop", "unknown"}:
+            return "do_not_contact"
+        if domain_status in {"parked", "no_website"}:
+            if kvk.kvk_match_status == "matched" and kvk.addresses:
+                return "manual_review_required"
             return "do_not_contact"
         if kvk.ind_non_mailing is True:
             return "manual_review_required"
