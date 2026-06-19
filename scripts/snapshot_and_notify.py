@@ -16,7 +16,7 @@ from app.domain_feed import write_registered_domains_txt
 from app.domains_monitor import DomainsMonitorError, download_nl_daily_domains
 from app.models import EnrichDomainRequest, LeadEnrichmentResponse
 from app.pipeline import LeadEnrichmentPipeline
-from app.snapshot_store import SnapshotStore
+from app.processed_dates import ProcessedDates
 
 
 async def enrich_domains(
@@ -69,7 +69,7 @@ async def main() -> None:
     settings = get_settings()
 
     parser = argparse.ArgumentParser(
-        description="Snapshot .nl domains, enrich new ones, notify Discord."
+        description="Download today's .nl daily delta, enrich new domains, notify Discord."
     )
     parser.add_argument("--database", default=settings.snapshot_database_path)
     parser.add_argument("--output-dir", default=settings.snapshot_output_dir)
@@ -79,15 +79,29 @@ async def main() -> None:
         default=settings.max_domains_per_run,
         help="Cap on new domains to enrich per run.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-process today even if already marked as done.",
+    )
     args = parser.parse_args()
 
-    run_id = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     today = date.today().isoformat()
+    run_id = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
 
     if not settings.domains_monitor_api_token:
         raise SystemExit("Set DOMAINS_MONITOR_API_TOKEN first.")
 
-    print(f"[1/5] Downloading today's .nl daily delta (run {run_id}) ...")
+    store = ProcessedDates(Path(args.database))
+
+    if not args.force and store.is_processed(today):
+        print(f"Already processed {today}'s daily delta — nothing new. Use --force to re-run.")
+        if settings.discord_webhook_url:
+            notifier = DiscordNotifier(settings.discord_webhook_url)
+            await notifier.send_summary(today, 0, 0, False)
+        return
+
+    print(f"[1/5] Downloading {today}'s .nl daily delta ...")
     try:
         domains = download_nl_daily_domains(
             settings.domains_monitor_api_token,
@@ -102,33 +116,27 @@ async def main() -> None:
     if check_file.exists():
         check_file.unlink()
 
-    print(f"[2/5] Diffing against SQLite snapshot store ...")
-    store = SnapshotStore(Path(args.database))
-    result = store.save_snapshot_and_diff(run_id, domains)
-    store.prune_old_snapshots(14)
+    store.mark_processed(today, len(domains))
+
+    total_new = len(domains)
+    print(f"    Got {total_new} new .nl domains for {today}.")
+
     output_path = Path(args.output_dir) / f"domains_registered_{run_id}.txt"
     write_registered_domains_txt(
-        result.added_domains,
+        domains,
         output_path,
-        run_id,
-        "domains-monitor.com-daily-delta-diff-sqlite",
+        today,
+        "domains-monitor.com-daily-delta",
     )
 
-    total_new = len(result.added_domains)
-    print(f"    Got {result.total_domains} domains in today's delta. {total_new} new vs {result.previous_snapshot_date or 'no baseline'}.")
-
-    if result.previous_snapshot_date is None:
-        print("    No previous snapshot; this run established the baseline. Nothing to notify.")
-        return
-
     if total_new == 0:
-        print("    No new domains detected today.")
+        print("    No domains in today's delta.")
         if settings.discord_webhook_url:
             notifier = DiscordNotifier(settings.discord_webhook_url)
             await notifier.send_summary(today, 0, 0, False)
         return
 
-    to_enrich = result.added_domains[: args.max_domains]
+    to_enrich = domains[: args.max_domains]
     print(f"[3/5] Enriching {len(to_enrich)} domains (capped at {args.max_domains}) ...")
     pipeline = LeadEnrichmentPipeline(settings)
     enriched = await enrich_domains(to_enrich, pipeline)
