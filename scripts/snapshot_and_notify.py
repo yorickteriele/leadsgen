@@ -81,7 +81,7 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
-    run_id = datetime.now(timezone.utc).isoformat()
+    run_id = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     today = date.today().isoformat()
 
     if not settings.domains_monitor_api_token:
@@ -103,7 +103,9 @@ async def main() -> None:
         check_file.unlink()
 
     print(f"[2/5] Diffing against SQLite snapshot store ...")
-    result = SnapshotStore(Path(args.database)).save_snapshot_and_diff(today, domains)
+    store = SnapshotStore(Path(args.database))
+    result = store.save_snapshot_and_diff(run_id, domains)
+    store.prune_old_snapshots(14)
     output_path = Path(args.output_dir) / f"domains_registered_{run_id}.txt"
     write_registered_domains_txt(
         result.added_domains,
@@ -157,7 +159,11 @@ async def main() -> None:
         await notifier.send_summary(today, total_new, len(enriched), llm_enabled)
         await asyncio.sleep(0.5)
 
-        pairs = [(r, llm_scores.get(r.domain)) for r in enriched]
+        pairs = [
+            (r, llm_scores.get(r.domain))
+            for r in enriched
+            if (llm_scores.get(r.domain) or r.lead).fit_score >= 40
+        ]
         await notifier.send_leads(pairs)
         await asyncio.sleep(0.5)
 

@@ -92,6 +92,25 @@ class SnapshotStore:
             (snapshot_date, len(domains)),
         )
 
+    def prune_old_snapshots(self, keep: int = 14) -> None:
+        with sqlite3.connect(self.database_path) as connection:
+            self._init(connection)
+            old = connection.execute(
+                """
+                select snapshot_date from snapshots
+                where snapshot_date not in (
+                    select snapshot_date from snapshots
+                    order by snapshot_date desc
+                    limit ?
+                )
+                """,
+                (keep,),
+            ).fetchall()
+            for (d,) in old:
+                connection.execute("delete from snapshot_domains where snapshot_date = ?", (d,))
+                connection.execute("delete from snapshots where snapshot_date = ?", (d,))
+            connection.commit()
+
     def _added_domains(
         self,
         connection: sqlite3.Connection,
